@@ -1,46 +1,48 @@
 // src/models/User.js
-const { DataTypes } = require('sequelize');
-const bcrypt = require('bcryptjs');
-const { sequelize } = require('../utils/db');
+const { DataTypes, Model } = require("sequelize");
+const bcrypt = require("bcrypt");
+const { sequelize } = require("../utils/db");
 
-const User = sequelize.define('User', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  },
-  email: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true,
-    validate: { isEmail: true },
-  },
-  password: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    validate: { len: [8, 255] },  // Mínimo 8 chars
-  },
-  role: {
-    type: DataTypes.ENUM('user', 'admin'),  // Como en diagrama: roles para guards
-    defaultValue: 'user',
-    allowNull: false,
-  },
-}, {
-  hooks: {  // Auto-hash password al crear/actualizar
-    beforeCreate: async (user) => {
-      user.password = await bcrypt.hash(user.password, 10);
+class User extends Model {
+  async comparePassword(password) {
+    return bcrypt.compare(password, this.password);
+  }
+}
+
+User.init(
+  {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4, // UUID automático
+      primaryKey: true,
     },
-    beforeUpdate: async (user) => {
-      if (user.changed('password')) {
-        user.password = await bcrypt.hash(user.password, 10);
-      }
+    email: {
+      type: DataTypes.STRING,
+      unique: true,
+      allowNull: false,
+      validate: { isEmail: true },
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    role: {
+      type: DataTypes.STRING,
+      defaultValue: "user",
     },
   },
-});
-
-// Método para comparar password (usa en login)
-User.prototype.comparePassword = function (password) {
-  return bcrypt.compare(password, this.password);
-};
+  {
+    sequelize,
+    modelName: "User",
+    tableName: "users",
+    hooks: {
+      beforeCreate: async (user) => {
+        if (user.password) {
+          user.password = await bcrypt.hash(user.password, 10);
+        }
+      },
+    },
+  }
+);
 
 module.exports = User;

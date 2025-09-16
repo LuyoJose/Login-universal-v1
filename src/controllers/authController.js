@@ -83,15 +83,44 @@ exports.verifyToken = async (req, res) => {
 // Nueva ruta: Registro (para crear users con roles)
 exports.register = async (req, res) => {
   try {
-    const { email, password, role = 'user' } = req.body;
-    const existing = await User.findOne({ where: { email } });
-    if (existing) return res.status(400).json({ error: 'Email ya existe' });
+    const { email, password, role } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y password requeridos' });
+    }
 
-    const newUser = await User.create({ email, password, role });
-    res.status(201).json({ message: 'User creado', user: { id: newUser.id, email: newUser.email, role: newUser.role } });
+    // Verificar si ya existe
+    const existing = await User.findOne({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ error: 'El usuario ya existe' });
+    }
+
+    // Crear nuevo usuario (UUID automático por el modelo)
+    const user = await User.create({ email, password, role });
+
+    // Crear token
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      config.jwtSecret,
+      { expiresIn: '1h' }
+    );
+
+    // Guardar en Redis
+    const redis = await connectRedis();
+    await redis.set(`token:${user.id}`, token, { EX: 3600 });
+    await redis.set(
+      `session:${user.id}`,
+      JSON.stringify({ role: user.role, lastActive: Date.now() }),
+      { EX: 3600 }
+    );
+
+    res.status(201).json({
+      message: 'Usuario registrado',
+      user: { id: user.id, email: user.email, role: user.role },
+      token,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error creando user' });
+    console.error('Error en register:', error);
+    res.status(500).json({ error: 'Error interno', details: error.message });
   }
 };
 
