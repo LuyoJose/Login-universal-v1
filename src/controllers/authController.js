@@ -24,7 +24,8 @@ async function createTestUser() {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email y password requeridos' });
+    if (!email || !password)
+      return res.status(400).json({ error: 'Email y password requeridos' });
 
     // Busca en DB
     const user = await User.findOne({ where: { email } });
@@ -39,21 +40,23 @@ exports.login = async (req, res) => {
       { expiresIn: '1h' }
     );
 
-    // Guarda en Redis (como antes)
+    // Guarda en Redis
     const redis = await connectRedis();
     await redis.set(`token:${user.id}`, token, { EX: 3600 });
-    await redis.set(`session:${user.id}`, JSON.stringify({ role: user.role, lastActive: Date.now() }), { EX: 3600 });
+    await redis.set(
+      `session:${user.id}`,
+      JSON.stringify({ role: user.role, lastActive: Date.now() }),
+      { EX: 3600 }
+    );
 
-    res.json({
-      message: 'Login OK',
-      token,
-      user: { id: user.id, email: user.email, role: user.role },
-    });
+    // 🔥 Solo devuelve el token
+    res.json({ token });
   } catch (error) {
-    console.error(error);
+    console.error('Error en login:', error);
     res.status(500).json({ error: 'Error interno' });
   }
 };
+
 
 exports.verifyToken = async (req, res) => {
   try {
@@ -97,16 +100,8 @@ exports.register = async (req, res) => {
     // Crear nuevo usuario (UUID automático por el modelo)
     const user = await User.create({ email, password, role });
 
-    // Crear token
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      config.jwtSecret,
-      { expiresIn: '1h' }
-    );
-
-    // Guardar en Redis
+    // (Opcional) guardar datos de sesión en Redis
     const redis = await connectRedis();
-    await redis.set(`token:${user.id}`, token, { EX: 3600 });
     await redis.set(
       `session:${user.id}`,
       JSON.stringify({ role: user.role, lastActive: Date.now() }),
@@ -115,14 +110,18 @@ exports.register = async (req, res) => {
 
     res.status(201).json({
       message: 'Usuario registrado',
-      user: { id: user.id, email: user.email, role: user.role },
-      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      }
     });
   } catch (error) {
     console.error('Error en register:', error);
     res.status(500).json({ error: 'Error interno', details: error.message });
   }
 };
+
 
 async function createTestUser() {
   try {
