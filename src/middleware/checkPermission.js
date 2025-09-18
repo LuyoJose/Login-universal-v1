@@ -1,5 +1,5 @@
 // src/middleware/checkPermission.js
-const { Role, Permission } = require('../models');
+const { RolePermission, Permission, Role } = require('../models');
 
 const checkPermission = (requiredPermission) => {
   return async (req, res, next) => {
@@ -8,28 +8,39 @@ const checkPermission = (requiredPermission) => {
         return res.status(401).json({ error: 'Usuario no autenticado' });
       }
 
-      // Obtener el rol del usuario con sus permisos
-      const userRole = await Role.findByPk(req.user.roleId, {
+      // ✅ NUEVA: Verificar permisos ESPECÍFICOS del usuario
+      const userPermission = await RolePermission.findOne({
+        where: { userId: req.user.userId },
         include: [{
           model: Permission,
-          through: { attributes: [] } // Excluir tabla intermedia
+          where: { name: requiredPermission },
+          attributes: []
         }]
       });
 
-      if (!userRole) {
-        return res.status(403).json({ error: 'Rol no encontrado' });
-      }
+      // ✅ OPCIÓN ALTERNATIVA: Verificar permisos del rol (como antes)
+      const userRole = await Role.findByPk(req.user.roleId, {
+        include: [{
+          model: Permission,
+          through: { attributes: [] }
+        }]
+      });
 
-      // Verificar si el rol tiene el permiso requerido
-      const hasPermission = userRole.Permissions.some(
+      // ✅ Verificar SI el usuario tiene el permiso específico O si su rol lo tiene
+      const hasSpecificPermission = !!userPermission;
+      const hasRolePermission = userRole && userRole.Permissions.some(
         permission => permission.name === requiredPermission
       );
+
+      const hasPermission = hasSpecificPermission || hasRolePermission;
 
       if (!hasPermission) {
         return res.status(403).json({ 
           error: 'Permiso denegado',
           required: requiredPermission,
-          has: userRole.Permissions.map(p => p.name)
+          userId: req.user.userId,
+          // Opcional: mostrar qué permisos tiene
+          userPermissions: userRole ? userRole.Permissions.map(p => p.name) : []
         });
       }
 

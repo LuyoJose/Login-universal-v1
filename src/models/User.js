@@ -1,14 +1,9 @@
-// src/models/User.js
+// src/models/User.js (actualizado)
 const { DataTypes, Model } = require("sequelize");
-const bcrypt = require("bcrypt");
 const { sequelize } = require("../utils/db");
 const Role = require("./Role");
 
-class User extends Model {
-  async comparePassword(password) {
-    return bcrypt.compare(password, this.password);
-  }
-}
+class User extends Model {}
 
 User.init(
   {
@@ -17,25 +12,6 @@ User.init(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    email: {
-      type: DataTypes.STRING,
-      unique: true,
-      allowNull: false,
-      validate: { isEmail: true },
-    },
-    password: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    roleId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      references: {
-        model: 'roles',
-        key: 'id'
-      }
-    },
-    // ✅ AGREGAR ESTOS CAMPOS:
     nombre: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -45,19 +21,24 @@ User.init(
       type: DataTypes.STRING,
       allowNull: true,
       defaultValue: ""
-    }
+    },
+    roleId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'roles',
+        key: 'id'
+      }
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'inactive', 'suspended'),
+      defaultValue: 'active',
+    },
   },
   {
     sequelize,
     modelName: "User",
     tableName: "users",
-    hooks: {
-      beforeCreate: async (user) => {
-        if (user.password) {
-          user.password = await bcrypt.hash(user.password, 10);
-        }
-      },
-    },
   }
 );
 

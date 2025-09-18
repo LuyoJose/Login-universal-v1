@@ -25,10 +25,15 @@ const sequelize = new Sequelize(
 async function connectDB() {
   try {
     await sequelize.authenticate();
-    console.log('PostgreSQL conectado');
-    await sequelize.sync();  // Crea tablas auto si no existen (dev only; usa migraciones en prod)
+    console.log('✅ PostgreSQL conectado');
+    
+    // ⚠️ SOLO EN DESARROLLO: { alter: true } para actualizar esquemas
+    const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
+    await sequelize.sync(syncOptions);
+    
+    console.log('✅ Tablas sincronizadas');
   } catch (error) {
-    console.error('Error conectando DB:', error);
+    console.error('❌ Error conectando DB:', error);
     process.exit(1);
   }
 }

@@ -2,23 +2,39 @@
 const jwt = require('jsonwebtoken');
 const { connectRedis } = require('../utils/redis');
 const config = require('../config');
-const { User, Role } = require('../models');
+const { User, Role, Credential } = require('../models');
 const { v4: uuidv4 } = require('uuid');
+const { RolePermission, Permission } = require('../models');
+const { sequelize } = require('../utils/db');
 
-// Función helper para crear user de prueba (solo dev)
-async function createTestUser() {
+async function assignDefaultPermissions(userId, roleName) {
   try {
-    const existing = await User.findOne({ where: { email: 'test@example.com' } });
-    if (!existing) {
-      await User.create({
-        email: 'test@example.com',
-        password: 'password123',  // Se hashea auto
-        role: 'admin',
-      });
-      console.log('User de prueba creado');
+    const role = await Role.findOne({ where: { name: roleName } });
+    if (!role) return;
+
+    // Permisos por defecto según el rol
+    const defaultPermissions = {
+      'admin': ['read', 'write', 'edit', 'delete', 'manage_permissions'], // ← Agregar manage_permissions
+      'manager': ['read', 'write'],
+      'user': ['read']
+    };
+
+    const permissionsToAssign = defaultPermissions[roleName] || ['read'];
+    
+    for (const permName of permissionsToAssign) {
+      const permission = await Permission.findOne({ where: { name: permName } });
+      if (permission) {
+        await RolePermission.create({
+          roleId: role.id,
+          permissionId: permission.id, 
+          userId: userId
+        });
+      }
     }
+    
+    console.log(`Permisos asignados para usuario ${userId} con rol ${roleName}`);
   } catch (error) {
-    console.error('Error creando user test:', error);
+    console.error('Error asignando permisos por defecto:', error);
   }
 }
 
@@ -28,16 +44,33 @@ exports.login = async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ error: 'Email y password requeridos' });
 
-    const user = await User.findOne({ where: { email } });
-    if (!user || !(await user.comparePassword(password))) {
+    // Buscar en Credentials
+    const credential = await Credential.findOne({ 
+      where: { email },
+      include: [{
+        model: User,
+        include: [Role]
+      }]
+    });
+
+    if (!credential || !(await credential.comparePassword(password))) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
+    // Actualizar último login
+    await credential.update({ lastLogin: new Date() });
+
+    const user = credential.User;
+    const userRole = user.Role;
+
+    // Generar session_id único
     const sessionId = `session_${uuidv4().replace(/-/g, '')}`;
     
+    // Generar JWT
     const token = jwt.sign(
       { 
         userId: user.id, 
+        role: userRole.name,
         roleId: user.roleId,
         sessionId: sessionId
       },
@@ -45,17 +78,17 @@ exports.login = async (req, res) => {
       { expiresIn: '1h' }
     );
 
+    // Guardar en Redis
     const redis = await connectRedis();
     
-    // MODIFICA ESTO según los campos que tengas en User:
     const sessionData = {
       "session": {
         "token": token,
         "user": {
-          "role": user.role,
-          "email": user.email || "",
-          "nombre": user.nombre || "",
-          "apellido": user.apellido || ""
+          "role": userRole.name,
+          "email": credential.email,
+          "nombre": user.nombre,
+          "apellido": user.apellido
         }
       }
     };
@@ -69,7 +102,14 @@ exports.login = async (req, res) => {
     res.json({ 
       message: "Login OK",
       sessionId: sessionId,
-      token: token
+      token: token,
+      user: {
+        id: user.id,
+        email: credential.email,
+        role: userRole.name,
+        nombre: user.nombre,
+        apellido: user.apellido
+      }
     });
 
   } catch (error) {
@@ -105,49 +145,58 @@ exports.verifyToken = async (req, res) => {
 };
 
 // Nueva ruta: Registro (para crear users con roles)
+// EN authController.js - CAMBIA la búsqueda del registro
 exports.register = async (req, res) => {
-  // Agrega esta línea al inicio de la función
-  let roleRecord; // ← DECLARA la variable aquí
+  let roleRecord;
+  
+  // ✅ Asegúrate de tener esta importación al inicio del archivo:
+  // const { sequelize } = require('../utils/db');
+  const transaction = await sequelize.transaction();
 
   try {
-    console.log('Datos recibidos en register:', req.body);
-    
     const { email, password, role, nombre, apellido } = req.body;
     
     if (!email || !password) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Email y password requeridos' });
     }
 
-    console.log('Buscando role:', role || 'user');
-    
-    // Buscar el role por nombre para obtener su ID
-    roleRecord = await Role.findOne({  // ← Ahora roleRecord está definida
-      where: { name: role || 'user' }
+    // Buscar en CREDENTIALS
+    const existingCredential = await Credential.findOne({
+      where: { email },
+      transaction
     });
-    
-    console.log('Role encontrado:', roleRecord ? roleRecord.name : 'null');
+
+    if (existingCredential) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'El email ya está registrado' });
+    }
+
+    roleRecord = await Role.findOne({ 
+      where: { name: role || 'user' },
+      transaction
+    });
     
     if (!roleRecord) {
-      return res.status(400).json({ 
-        error: 'Rol no válido', 
-        availableRoles: ['admin', 'manager', 'user'] 
-      });
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Rol no válido' });
     }
 
-    // Verificar si el usuario ya existe
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      return res.status(400).json({ error: 'El usuario ya existe' });
-    }
-
-    // Crear nuevo usuario con el roleId correcto
+    // Crear usuario (sin email/password)
     const user = await User.create({ 
-      email, 
-      password, 
-      roleId: roleRecord.id,
       nombre: nombre || '',
-      apellido: apellido || ''
-    });
+      apellido: apellido || '',
+      roleId: roleRecord.id,
+      status: 'active'
+    }, { transaction });
+
+    // Crear credenciales
+    await Credential.create({
+      email,
+      password,
+      userId: user.id,
+      isVerified: false
+    }, { transaction });
 
     // Generar session_id único
     const sessionId = `session_${uuidv4().replace(/-/g, '')}`;
@@ -172,7 +221,7 @@ exports.register = async (req, res) => {
         "token": token,
         "user": {
           "role": roleRecord.name,
-          "email": user.email,
+          "email": email,
           "nombre": user.nombre,
           "apellido": user.apellido
         }
@@ -185,13 +234,15 @@ exports.register = async (req, res) => {
 
     await redis.set(`user:${user.id}:session`, sessionId, { EX: 3600 });
 
+    await transaction.commit();
+
     res.status(201).json({
       message: 'Usuario registrado y sesión iniciada',
       sessionId: sessionId,
       token: token,
       user: {
         id: user.id,
-        email: user.email,
+        email: email,
         role: roleRecord.name,
         nombre: user.nombre,
         apellido: user.apellido
@@ -199,10 +250,9 @@ exports.register = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error DETAILED en register:', error);
-    console.error('Stack trace:', error.stack);
+    await transaction.rollback();
+    console.error('Error en register:', error);
     
-    // Mensaje de error más informativo
     let errorMessage = 'Error interno del servidor';
     if (error.name === 'SequelizeValidationError') {
       errorMessage = 'Error de validación: ' + error.errors.map(e => e.message).join(', ');
@@ -212,13 +262,10 @@ exports.register = async (req, res) => {
     
     res.status(500).json({ 
       error: errorMessage,
-      details: error.message,
-      roleSearched: role || 'user',
-      roleFound: !!roleRecord
+      details: error.message
     });
   }
 };
-// En authController.js
 // src/controllers/authController.js
 exports.getAvailableRoles = async (req, res) => {
   try {
