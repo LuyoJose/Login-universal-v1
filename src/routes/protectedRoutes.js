@@ -1,22 +1,29 @@
+// src/routes/protectedRoutes.js
 const express = require('express');
-const auth = require('../middleware/auth');
-const checkPermission = require('../middleware/checkPermission');
-
+const { checkPermission } = require('../middleware/checkPermission');
 const router = express.Router();
 
-// Ruta accesible solo si estás logueado
-router.get('/profile', auth, checkPermission('read:profile'), (req, res) => {
-  res.json({ message: 'Tu perfil', user: req.user });
+// Solo usuarios con permiso de lectura
+router.get('/data', checkPermission('read'), (req, res) => {
+  res.json({ message: 'Datos protegidos de lectura' });
 });
 
-// Ruta que solo admin o manager pueden usar
-router.post('/orders', auth, checkPermission('create:order'), (req, res) => {
-  res.json({ message: 'Orden creada' });
+// Agrega esta ruta
+
+
+// Solo usuarios con permiso de escritura
+router.post('/data', checkPermission('write'), (req, res) => {
+  res.json({ message: 'Datos creados' });
 });
 
-// Ruta solo admin (porque en roles.js le dimos "*")
-router.delete('/admin/delete-user', auth, checkPermission('delete:user'), (req, res) => {
-  res.json({ message: 'Usuario eliminado (solo admin)' });
+// Solo usuarios con permiso de edición
+router.put('/data/:id', checkPermission('edit'), (req, res) => {
+  res.json({ message: 'Datos actualizados' });
+});
+
+// Solo usuarios con permiso de eliminación
+router.delete('/data/:id', checkPermission('delete'), (req, res) => {
+  res.json({ message: 'Datos eliminados' });
 });
 
 module.exports = router;

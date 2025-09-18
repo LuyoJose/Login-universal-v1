@@ -1,18 +1,25 @@
-const { sequelize } = require("../utils/db");
+// src/models/index.js
 const User = require("./User");
 const Role = require("./Role");
 const Permission = require("./Permission");
 
-// Relaciones
-Role.hasMany(User, { foreignKey: "roleId" });
-User.belongsTo(Role, { foreignKey: "roleId" });
+// Relación muchos a muchos entre Role y Permission
+Role.belongsToMany(Permission, { 
+  through: 'RolePermissions',
+  foreignKey: 'roleId'
+});
 
-Role.belongsToMany(Permission, { through: "RolePermissions" });
-Permission.belongsToMany(Role, { through: "RolePermissions" });
+Permission.belongsToMany(Role, { 
+  through: 'RolePermissions',
+  foreignKey: 'permissionId'
+});
+
+// Relación uno a muchos entre Role y User
+Role.hasMany(User, { foreignKey: 'roleId' });
+User.belongsTo(Role, { foreignKey: 'roleId' });
 
 module.exports = {
-  sequelize,
   User,
   Role,
-  Permission,
+  Permission
 };

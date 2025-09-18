@@ -2,6 +2,7 @@
 const { DataTypes, Model } = require("sequelize");
 const bcrypt = require("bcrypt");
 const { sequelize } = require("../utils/db");
+const Role = require("./Role");
 
 class User extends Model {
   async comparePassword(password) {
@@ -13,7 +14,7 @@ User.init(
   {
     id: {
       type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4, // UUID automático
+      defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
     email: {
@@ -26,10 +27,25 @@ User.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    role: {
-      type: DataTypes.STRING,
-      defaultValue: "user",
+    roleId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'roles',
+        key: 'id'
+      }
     },
+    // ✅ AGREGAR ESTOS CAMPOS:
+    nombre: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: ""
+    },
+    apellido: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: ""
+    }
   },
   {
     sequelize,
@@ -44,5 +60,8 @@ User.init(
     },
   }
 );
+
+User.belongsTo(Role, { foreignKey: 'roleId' });
+Role.hasMany(User, { foreignKey: 'roleId' });
 
 module.exports = User;

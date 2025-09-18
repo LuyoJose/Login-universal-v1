@@ -2,7 +2,8 @@
 const jwt = require('jsonwebtoken');
 const { connectRedis } = require('../utils/redis');
 const config = require('../config');
-const User = require('../models/User');  // Importa modelo
+const { User, Role } = require('../models');
+const { v4: uuidv4 } = require('uuid');
 
 // Función helper para crear user de prueba (solo dev)
 async function createTestUser() {
@@ -27,33 +28,53 @@ exports.login = async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ error: 'Email y password requeridos' });
 
-    // Busca en DB
     const user = await User.findOne({ where: { email } });
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Genera JWT
+    const sessionId = `session_${uuidv4().replace(/-/g, '')}`;
+    
     const token = jwt.sign(
-      { userId: user.id, role: user.role },
+      { 
+        userId: user.id, 
+        roleId: user.roleId,
+        sessionId: sessionId
+      },
       config.jwtSecret,
       { expiresIn: '1h' }
     );
 
-    // Guarda en Redis
     const redis = await connectRedis();
-    await redis.set(`token:${user.id}`, token, { EX: 3600 });
-    await redis.set(
-      `session:${user.id}`,
-      JSON.stringify({ role: user.role, lastActive: Date.now() }),
-      { EX: 3600 }
-    );
+    
+    // MODIFICA ESTO según los campos que tengas en User:
+    const sessionData = {
+      "session": {
+        "token": token,
+        "user": {
+          "role": user.role,
+          "email": user.email || "",
+          "nombre": user.nombre || "",
+          "apellido": user.apellido || ""
+        }
+      }
+    };
 
-    // 🔥 Solo devuelve el token
-    res.json({ token });
+    await redis.set(sessionId, JSON.stringify(sessionData), { 
+      EX: 3600
+    });
+
+    await redis.set(`user:${user.id}:session`, sessionId, { EX: 3600 });
+
+    res.json({ 
+      message: "Login OK",
+      sessionId: sessionId,
+      token: token
+    });
+
   } catch (error) {
     console.error('Error en login:', error);
-    res.status(500).json({ error: 'Error interno' });
+    res.status(500).json({ error: 'Error interno', details: error.message });
   }
 };
 
@@ -64,7 +85,7 @@ exports.verifyToken = async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Token requerido' });
 
     const decoded = jwt.verify(token, config.jwtSecret);
-    
+
     // Chequea en Redis
     const redis = await connectRedis();
     const savedToken = await redis.get(`token:${decoded.userId}`);
@@ -85,43 +106,138 @@ exports.verifyToken = async (req, res) => {
 
 // Nueva ruta: Registro (para crear users con roles)
 exports.register = async (req, res) => {
+  // Agrega esta línea al inicio de la función
+  let roleRecord; // ← DECLARA la variable aquí
+
   try {
-    const { email, password, role } = req.body;
+    console.log('Datos recibidos en register:', req.body);
+    
+    const { email, password, role, nombre, apellido } = req.body;
+    
     if (!email || !password) {
       return res.status(400).json({ error: 'Email y password requeridos' });
     }
 
-    // Verificar si ya existe
+    console.log('Buscando role:', role || 'user');
+    
+    // Buscar el role por nombre para obtener su ID
+    roleRecord = await Role.findOne({  // ← Ahora roleRecord está definida
+      where: { name: role || 'user' }
+    });
+    
+    console.log('Role encontrado:', roleRecord ? roleRecord.name : 'null');
+    
+    if (!roleRecord) {
+      return res.status(400).json({ 
+        error: 'Rol no válido', 
+        availableRoles: ['admin', 'manager', 'user'] 
+      });
+    }
+
+    // Verificar si el usuario ya existe
     const existing = await User.findOne({ where: { email } });
     if (existing) {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
 
-    // Crear nuevo usuario (UUID automático por el modelo)
-    const user = await User.create({ email, password, role });
+    // Crear nuevo usuario con el roleId correcto
+    const user = await User.create({ 
+      email, 
+      password, 
+      roleId: roleRecord.id,
+      nombre: nombre || '',
+      apellido: apellido || ''
+    });
 
-    // (Opcional) guardar datos de sesión en Redis
-    const redis = await connectRedis();
-    await redis.set(
-      `session:${user.id}`,
-      JSON.stringify({ role: user.role, lastActive: Date.now() }),
-      { EX: 3600 }
+    // Generar session_id único
+    const sessionId = `session_${uuidv4().replace(/-/g, '')}`;
+    
+    // Generar JWT
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        role: roleRecord.name,
+        roleId: user.roleId,
+        sessionId: sessionId
+      },
+      config.jwtSecret,
+      { expiresIn: '1h' }
     );
 
+    // Guardar en Redis
+    const redis = await connectRedis();
+    
+    const sessionData = {
+      "session": {
+        "token": token,
+        "user": {
+          "role": roleRecord.name,
+          "email": user.email,
+          "nombre": user.nombre,
+          "apellido": user.apellido
+        }
+      }
+    };
+
+    await redis.set(sessionId, JSON.stringify(sessionData), { 
+      EX: 3600
+    });
+
+    await redis.set(`user:${user.id}:session`, sessionId, { EX: 3600 });
+
     res.status(201).json({
-      message: 'Usuario registrado',
+      message: 'Usuario registrado y sesión iniciada',
+      sessionId: sessionId,
+      token: token,
       user: {
         id: user.id,
         email: user.email,
-        role: user.role
+        role: roleRecord.name,
+        nombre: user.nombre,
+        apellido: user.apellido
       }
     });
+
   } catch (error) {
-    console.error('Error en register:', error);
-    res.status(500).json({ error: 'Error interno', details: error.message });
+    console.error('Error DETAILED en register:', error);
+    console.error('Stack trace:', error.stack);
+    
+    // Mensaje de error más informativo
+    let errorMessage = 'Error interno del servidor';
+    if (error.name === 'SequelizeValidationError') {
+      errorMessage = 'Error de validación: ' + error.errors.map(e => e.message).join(', ');
+    } else if (error.name === 'SequelizeUniqueConstraintError') {
+      errorMessage = 'El email ya existe';
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      details: error.message,
+      roleSearched: role || 'user',
+      roleFound: !!roleRecord
+    });
   }
 };
-
+// En authController.js
+// src/controllers/authController.js
+exports.getAvailableRoles = async (req, res) => {
+  try {
+    const roles = await Role.findAll({
+      attributes: ['id', 'name', 'description'],
+      order: [['name', 'ASC']]
+    });
+    
+    res.json({ 
+      roles: roles.map(role => ({
+        name: role.name,
+        description: role.description
+      }))
+    });
+  } catch (error) {
+    console.error('Error obteniendo roles:', error);
+    res.status(500).json({ error: 'Error interno' });
+  }
+};
 
 async function createTestUser() {
   try {

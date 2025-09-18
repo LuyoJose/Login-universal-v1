@@ -1,15 +1,30 @@
-const { DataTypes } = require("sequelize");
+const { DataTypes, Model } = require("sequelize");
 const { sequelize } = require("../utils/db");
 
-const Permission = sequelize.define("Permission", {
-  action: {
-    type: DataTypes.STRING,
-    allowNull: false,
+class Permission extends Model {}
+
+Permission.init(
+  {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      unique: true,
+      allowNull: false,
+    },
+    description: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   },
-  resource: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-});
+  {
+    sequelize,
+    modelName: "Permission",
+    tableName: "permissions",
+  }
+);
 
 module.exports = Permission;
