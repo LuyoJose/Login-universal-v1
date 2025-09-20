@@ -1,6 +1,7 @@
 // src/models/Credential.js
 const { DataTypes, Model } = require("sequelize");
 const { sequelize } = require("../utils/db");
+const User = require("./User");
 
 class Credential extends Model { }
 

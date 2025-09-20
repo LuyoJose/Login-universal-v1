@@ -3,9 +3,9 @@ const User = require("./User");
 const Role = require("./Role");
 const Permission = require("./Permission");
 const RolePermission = require("./RolePermission");
-const Credential = require("./Credential"); // ← FALTABA ESTA IMPORTACIÓN
+const Credential = require("./Credential");
 
-// Relaciones de Credential (DEBEN estar después de importar Credential)
+// Relación User ↔ Credential (1:1)
 User.hasOne(Credential, { 
   foreignKey: 'userId', 
   onDelete: 'CASCADE',
@@ -16,38 +16,35 @@ Credential.belongsTo(User, {
   as: 'user'
 });
 
-// Relaciones de RolePermission
-RolePermission.belongsTo(User, { foreignKey: 'userId' });
-User.hasMany(RolePermission, { foreignKey: 'userId' });
-
-RolePermission.belongsTo(Role, { foreignKey: 'roleId' });
-Role.hasMany(RolePermission, { foreignKey: 'roleId' });
-
-RolePermission.belongsTo(Permission, { foreignKey: 'permissionId' });
-Permission.hasMany(RolePermission, { foreignKey: 'permissionId' });
-
-// Relación muchos a muchos entre Role y Permission
+// Relación Role ↔ Permission (N:N)
 Role.belongsToMany(Permission, { 
   through: RolePermission,
   foreignKey: 'roleId',
-  otherKey: 'permissionId'
+  otherKey: 'permissionId',
+  as: 'permissions'
 });
-
 Permission.belongsToMany(Role, { 
   through: RolePermission,
   foreignKey: 'permissionId',
-  otherKey: 'roleId'
+  otherKey: 'roleId',
+  as: 'roles'
 });
 
-// Relación usuario-rol
-Role.hasMany(User, { foreignKey: 'roleId' });
-User.belongsTo(Role, { foreignKey: 'roleId' });
+// Relación User ↔ Role (1:N)
+Role.hasMany(User, { 
+  foreignKey: 'roleId',
+  as: 'users'
+});
+User.belongsTo(Role, { 
+  foreignKey: 'roleId',
+  as: 'role'
+});
 
-// Exportar TODOS los modelos
+// Exportar modelos
 module.exports = {
   User,
   Role,
   Permission,
   RolePermission,
-  Credential // ← Exportar Credential también
+  Credential
 };

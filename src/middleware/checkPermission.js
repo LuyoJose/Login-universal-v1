@@ -1,50 +1,60 @@
 // src/middleware/checkPermission.js
-const { RolePermission, Permission, Role } = require('../models');
+const jwt = require('jsonwebtoken');
+const { connectRedis } = require('../utils/redis');
+const config = require('../config');
+const { Role, User, Permission } = require('../models');
 
-const checkPermission = (requiredPermission) => {
+const checkPermission = (requiredPermission = null) => {
   return async (req, res, next) => {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'Usuario no autenticado' });
+      // 1️⃣ Verificar token en headers
+      const token = req.headers.authorization?.split(' ')[1];
+      if (!token) return res.status(401).json({ error: 'Token requerido' });
+
+      let decoded;
+      try {
+        decoded = jwt.verify(token, config.jwtSecret);
+      } catch {
+        return res.status(401).json({ error: 'Token inválido o expirado' });
       }
 
-      // ✅ NUEVA: Verificar permisos ESPECÍFICOS del usuario
-      const userPermission = await RolePermission.findOne({
-        where: { userId: req.user.userId },
-        include: [{
-          model: Permission,
-          where: { name: requiredPermission },
-          attributes: []
-        }]
+      // 2️⃣ Verificar token en Redis
+      const redis = await connectRedis();
+      const savedToken = await redis.get(`token:${decoded.userId}`);
+      if (savedToken !== token) return res.status(401).json({ error: 'Token inválido o expirado' });
+
+      // 3️⃣ Obtener usuario con su rol y permisos
+      const user = await User.findByPk(decoded.userId, {
+        include: {
+          model: Role,
+          include: {
+            model: Permission,
+            through: { attributes: [] } // Muchos a muchos
+          }
+        }
       });
 
-      // ✅ OPCIÓN ALTERNATIVA: Verificar permisos del rol (como antes)
-      const userRole = await Role.findByPk(req.user.roleId, {
-        include: [{
-          model: Permission,
-          through: { attributes: [] }
-        }]
-      });
+      if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
-      // ✅ Verificar SI el usuario tiene el permiso específico O si su rol lo tiene
-      const hasSpecificPermission = !!userPermission;
-      const hasRolePermission = userRole && userRole.Permissions.some(
-        permission => permission.name === requiredPermission
-      );
+      req.user = {
+        id: user.id,
+        email: user.email,
+        role: user.Role.name,
+        roleId: user.roleId,
+        permissions: user.Role.Permissions.map(p => p.name)
+      };
 
-      const hasPermission = hasSpecificPermission || hasRolePermission;
-
-      if (!hasPermission) {
-        return res.status(403).json({ 
+      // 4️⃣ Validar permiso si se requiere
+      if (requiredPermission && !req.user.permissions.includes(requiredPermission)) {
+        return res.status(403).json({
           error: 'Permiso denegado',
           required: requiredPermission,
-          userId: req.user.userId,
-          // Opcional: mostrar qué permisos tiene
-          userPermissions: userRole ? userRole.Permissions.map(p => p.name) : []
+          userId: req.user.id,
+          userPermissions: req.user.permissions
         });
       }
 
-      next();
+      next(); // Todo OK
     } catch (error) {
       console.error('Error en checkPermission:', error);
       res.status(500).json({ error: 'Error interno del servidor' });

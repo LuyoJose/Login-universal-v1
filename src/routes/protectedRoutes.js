@@ -1,29 +1,40 @@
 // src/routes/protectedRoutes.js
 const express = require('express');
-const { checkPermission } = require('../middleware/checkPermission');
 const router = express.Router();
 
-// Solo usuarios con permiso de lectura
-router.get('/data', checkPermission('read'), (req, res) => {
-  res.json({ message: 'Datos protegidos de lectura' });
-});
+const { checkPermission } = require('../middleware/checkPermission');
+const authController = require('../controllers/authController');
 
-// Agrega esta ruta
+// ---------------------------------------------------
+// Rutas de prueba (protegidas por permisos)
+router.get(
+  '/users',
+  checkPermission('read'),
+  authController.getUsersWithRoles
+);
 
+router.get(
+  '/roles',
+  checkPermission('read'),
+  authController.getAvailableRoles
+);
 
-// Solo usuarios con permiso de escritura
-router.post('/data', checkPermission('write'), (req, res) => {
-  res.json({ message: 'Datos creados' });
-});
+// ---------------------------------------------------
+// Gestión de roles (solo superadmin)
+router.post(
+  '/assign-role',
+  authController.isSuperAdmin,       // Solo superadmin
+  authController.assignRoleToUser
+);
 
-// Solo usuarios con permiso de edición
-router.put('/data/:id', checkPermission('edit'), (req, res) => {
-  res.json({ message: 'Datos actualizados' });
-});
+router.post(
+  '/remove-role',
+  authController.isSuperAdmin,       // Solo superadmin
+  authController.removeRoleFromUser
+);
 
-// Solo usuarios con permiso de eliminación
-router.delete('/data/:id', checkPermission('delete'), (req, res) => {
-  res.json({ message: 'Datos eliminados' });
-});
+// ---------------------------------------------------
+// Ruta para crear usuario de prueba (no protegida)
+router.post('/create-test-user', authController.createTestUser);
 
 module.exports = router;
