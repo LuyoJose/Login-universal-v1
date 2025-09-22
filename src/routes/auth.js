@@ -61,4 +61,13 @@ router.post(
     authController.createTestUser
 );
 
+// Recuperar contraseña (envía email)
+// Enviar OTP
+router.post('/forgot-password-otp', authController.sendOtp);
+
+// Resetear contraseña con OTP
+router.post('/reset-password-otp', authController.resetPasswordWithOtp);
+
+
+
 module.exports = router;

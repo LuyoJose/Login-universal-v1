@@ -6,6 +6,8 @@ const { connectRedis } = require('../utils/redis');
 const { User, Role, Credential, Permission, RolePermission } = require('../models');
 const { sequelize } = require('../utils/db');
 const config = require('../config');
+const transporter = require('../utils/mailer');
+const sendEmail = require('../utils/sendEmail');
 
 // ---------------------------------------------------
 // Función para asignar permisos por defecto
@@ -411,3 +413,66 @@ exports.createTestUser = async () => {
     console.error('Error creando user test:', error);
   }
 };
+
+// 🔹 Endpoint: Solicitar recuperación de contraseña
+// Enviar OTP
+exports.sendOtp = async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email requerido' });
+
+  try {
+    const credential = await Credential.findOne({ where: { email } });
+    if (!credential) return res.status(200).json({ message: 'Si el email existe, se ha enviado un OTP' });
+
+    // Generar OTP de 6 dígitos
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Guardar OTP en Redis con expiración de 5 min (300 segundos)
+    const redis = await connectRedis();
+    await redis.set(`otp:${credential.userId}`, otp, { EX: 300 });
+
+    // Enviar email con OTP
+    await sendEmail({
+      to: email,
+      subject: 'Recuperación de contraseña - OTP',
+      html: `<p>Tu código OTP es: <b>${otp}</b>. Expira en 5 minutos.</p>`
+    });
+
+    res.json({ message: 'OTP enviado correctamente' });
+  } catch (error) {
+    console.error('Error enviando OTP:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+};
+
+// Resetear contraseña usando OTP
+exports.resetPasswordWithOtp = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+  if (!email || !otp || !newPassword) return res.status(400).json({ error: 'Email, OTP y nueva contraseña requeridos' });
+
+  // Validación simple de contraseña
+  const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+  if (!passwordRegex.test(newPassword)) return res.status(400).json({ error: 'La contraseña debe tener mínimo 8 caracteres, al menos una letra y un número' });
+
+  try {
+    const credential = await Credential.findOne({ where: { email } });
+    if (!credential) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const redis = await connectRedis();
+    const storedOtp = await redis.get(`otp:${credential.userId}`);
+    if (!storedOtp || storedOtp !== otp) return res.status(400).json({ error: 'OTP inválido o expirado' });
+
+    // Hashear y actualizar contraseña
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await credential.update({ password: hashedPassword });
+
+    // Borrar OTP usado
+    await redis.del(`otp:${credential.userId}`);
+
+    res.json({ message: 'Contraseña actualizada correctamente' });
+  } catch (error) {
+    console.error('Error resetPasswordWithOtp:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+};
+

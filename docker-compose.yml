@@ -16,6 +16,11 @@ services:
       - "6379:6379"  # Expone puerto local
     volumes:
       - redis_data:/data
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"  # Puerto SMTP
+      - "8025:8025"  # Interfaz web para ver correos
 volumes:
   postgres_data:
   redis_data:
