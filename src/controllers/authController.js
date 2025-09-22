@@ -81,26 +81,41 @@ exports.isSuperAdmin = async (req, res, next) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: "Email y password requeridos" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email y password requeridos" });
+    }
 
+    // Buscar credencial + usuario + rol
     const credential = await Credential.findOne({
       where: { email },
-      include: [{ model: User, as: "user", include: [Role] }]
+      include: [{ model: User, as: "user", include: [{ model: Role, as: "role" }] }]
     });
 
-    if (!credential) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!credential) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
 
-    const validPassword = await bcrypt.compare(password, credential.password);
-    if (!validPassword) return res.status(401).json({ error: 'Credenciales inválidas' });
+    // Usar método del modelo
+    const validPassword = await credential.comparePassword(password);
+    if (!validPassword) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
 
+    // Actualizar último login
     await credential.update({ lastLogin: new Date() });
 
     const user = credential.user;
-    const userRole = user.Role;
+    const userRole = user.role;
 
+    // Crear sesión y token
     const sessionId = `session_${uuidv4().replace(/-/g, "")}`;
     const token = jwt.sign(
-      { userId: user.id, role: userRole?.name || "user", roleId: user.roleId, sessionId },
+      {
+        userId: user.id,
+        role: userRole?.name || "user",
+        roleId: user.roleId,
+        sessionId,
+      },
       config.jwtSecret,
       { expiresIn: "1h" }
     );
@@ -113,9 +128,9 @@ exports.login = async (req, res) => {
           email: credential.email,
           nombre: user.nombre,
           apellido: user.apellido,
-          role: userRole?.name
-        }
-      }
+          role: userRole?.name,
+        },
+      },
     };
 
     // Guardar token en Redis
@@ -132,8 +147,8 @@ exports.login = async (req, res) => {
         email: credential.email,
         role: userRole?.name,
         nombre: user.nombre,
-        apellido: user.apellido
-      }
+        apellido: user.apellido,
+      },
     });
 
   } catch (error) {
@@ -152,12 +167,19 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Todos los campos son obligatorios' });
     }
 
+    // Verificar si el email ya existe
     const existingCredential = await Credential.findOne({ where: { email } });
-    if (existingCredential) return res.status(409).json({ error: 'El email ya está registrado' });
+    if (existingCredential) {
+      return res.status(409).json({ error: 'El email ya está registrado' });
+    }
 
+    // Validar rol
     const roleObj = await Role.findOne({ where: { name: role } });
-    if (!roleObj) return res.status(400).json({ error: 'Rol inválido' });
+    if (!roleObj) {
+      return res.status(400).json({ error: 'Rol inválido' });
+    }
 
+    // Crear usuario
     const userId = uuidv4();
     const newUser = await User.create({
       id: userId,
@@ -167,10 +189,10 @@ exports.register = async (req, res) => {
       status: 'active'
     });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Crear credencial (password en texto plano, Sequelize lo hashea con el hook)
     await Credential.create({
       email,
-      password: hashedPassword,
+      password, // sin hash aquí
       userId: newUser.id,
       isVerified: true,
     });
@@ -188,7 +210,6 @@ exports.register = async (req, res) => {
     console.error('Error en register:', error.message, error.stack);
     res.status(500).json({ error: 'Error interno del servidor', details: error.message });
   }
-
 };
 
 // ---------------------------------------------------
