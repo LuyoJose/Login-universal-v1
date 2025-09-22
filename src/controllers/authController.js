@@ -45,12 +45,25 @@ async function assignDefaultPermissions(userId, roleName) {
 exports.isSuperAdmin = async (req, res, next) => {
   try {
     const user = await User.findByPk(req.user.id, {
-      include: [{ model: Role, include: [Permission] }]
+      include: [{
+        model: Role,
+        as: 'role',
+        include: [{
+          model: Permission,
+          as: 'permissions'
+        }]
+      }]
     });
 
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
 
-    const hasSuperAdminPermission = user.Role.Permissions.some(p => p.name === 'super_admin');
+    // Acceso correcto a role → permissions
+    const hasSuperAdminPermission = user.role?.permissions?.some(
+      (p) => p.name === 'super_admin'
+    );
+
     if (!hasSuperAdminPermission) {
       return res.status(403).json({ error: 'Se requieren permisos de superadministrador' });
     }
@@ -61,6 +74,7 @@ exports.isSuperAdmin = async (req, res, next) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+
 
 // ---------------------------------------------------
 // Login
@@ -171,9 +185,10 @@ exports.register = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error en register:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('Error en register:', error.message, error.stack);
+    res.status(500).json({ error: 'Error interno del servidor', details: error.message });
   }
+
 };
 
 // ---------------------------------------------------

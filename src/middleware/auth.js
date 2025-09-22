@@ -13,9 +13,17 @@ module.exports = async (req, res, next) => {
     const savedToken = await redis.get(`token:${decoded.userId}`);
     if (savedToken !== token) return res.status(401).json({ error: 'Token inválido' });
 
-    req.user = decoded;
+    // 🔑 Normalizamos el objeto req.user
+    req.user = {
+      id: decoded.userId,       // estandarizamos a .id
+      role: decoded.role,
+      roleId: decoded.roleId,
+      sessionId: decoded.sessionId
+    };
+
     next();
   } catch (error) {
+    console.error("Auth middleware error:", error);
     res.status(401).json({ error: 'Auth failed' });
   }
 };

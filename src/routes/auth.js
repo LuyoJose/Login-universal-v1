@@ -2,16 +2,19 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const auth = require('../middleware/auth'); // ✅ valida el JWT y setea req.user
 const { checkPermission } = require('../middleware/checkPermission');
 
 // ---------------------------------------------------
-// LOGIN
+// LOGIN (público)
 router.post('/login', authController.login);
 
+// ---------------------------------------------------
 // REGISTER (solo superadmin)
 router.post(
     '/register',
-    authController.isSuperAdmin, // middleware que valida superadmin
+    auth,                  // 🔑 primero valida token y setea req.user
+    authController.isSuperAdmin, 
     authController.register
 );
 
@@ -21,14 +24,16 @@ router.post(
 // Obtener todos los usuarios con sus roles
 router.get(
     '/users',
-    checkPermission('read'), // verifica permiso 'read'
+    auth,                  // ✅ siempre valida token
+    checkPermission('read'),
     authController.getUsersWithRoles
 );
 
 // Obtener todos los roles disponibles
 router.get(
     '/roles',
-    checkPermission('read'), // verifica permiso 'read'
+    auth, 
+    checkPermission('read'),
     authController.getAvailableRoles
 );
 
@@ -36,18 +41,24 @@ router.get(
 // GESTIÓN DE ROLES (solo superadmin)
 router.post(
     '/assign-role',
+    auth, 
     authController.isSuperAdmin,
     authController.assignRoleToUser
 );
 
 router.post(
     '/remove-role',
+    auth, 
     authController.isSuperAdmin,
     authController.removeRoleFromUser
 );
 
 // ---------------------------------------------------
 // RUTA DE PRUEBA: crear usuario de test
-router.post('/create-test-user', authController.createTestUser);
+router.post(
+    '/create-test-user',
+    auth,   // 🔒 también conviene protegerla
+    authController.createTestUser
+);
 
 module.exports = router;
