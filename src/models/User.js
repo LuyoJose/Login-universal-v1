@@ -42,7 +42,9 @@ User.init(
   }
 );
 
-User.belongsTo(Role, { foreignKey: 'roleId' });
-Role.hasMany(User, { foreignKey: 'roleId' });
+User.associate = (models) => {
+  User.belongsTo(models.Role, { foreignKey: "roleId" }); // muchos usuarios → un rol
+  User.hasOne(models.Credential, { foreignKey: "userId", onDelete: "CASCADE" }); // un user → una credencial
+};
 
 module.exports = User;

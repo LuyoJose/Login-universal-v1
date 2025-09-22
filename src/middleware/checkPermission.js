@@ -27,21 +27,24 @@ const checkPermission = (requiredPermission = null) => {
       const user = await User.findByPk(decoded.userId, {
         include: {
           model: Role,
+          as: "role",   // 👈 alias correcto
           include: {
             model: Permission,
-            through: { attributes: [] } // Muchos a muchos
+            as: "permissions", // 👈 alias correcto
+            through: { attributes: [] }
           }
         }
       });
+
 
       if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
       req.user = {
         id: user.id,
-        email: user.email,
-        role: user.Role.name,
+        email: user.credential?.email || null,
+        role: user.role?.name || "sin rol",
         roleId: user.roleId,
-        permissions: user.Role.Permissions.map(p => p.name)
+        permissions: user.role?.permissions.map((p) => p.name) || [],
       };
 
       // 4️⃣ Validar permiso si se requiere

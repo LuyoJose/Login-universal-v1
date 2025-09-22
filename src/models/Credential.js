@@ -54,6 +54,10 @@ Credential.init(
     }
 );
 
+// 🔹 Asociaciones
+Credential.associate = (models) => {
+    Credential.belongsTo(models.User, { foreignKey: "userId", onDelete: "CASCADE" });
+};
 // Método para comparar passwords
 Credential.prototype.comparePassword = async function (password) {
     const bcrypt = require('bcrypt');

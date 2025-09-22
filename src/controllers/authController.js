@@ -218,30 +218,91 @@ exports.assignRoleToUser = async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
     const { userId, roleName } = req.body;
-    if (!userId || !roleName) return res.status(400).json({ error: 'userId y roleName requeridos' });
+    if (!userId || !roleName) {
+      return res.status(400).json({ error: "userId y roleName requeridos" });
+    }
 
-    const targetUser = await User.findByPk(userId, { include: [Role], transaction });
-    if (!targetUser) return res.status(404).json({ error: 'Usuario no encontrado' });
+    // 1️⃣ Buscar usuario con su rol y permisos
+    const targetUser = await User.findByPk(userId, {
+      include: [
+        {
+          model: Role,
+          as: "role", // 👈 alias correcto
+          include: [
+            {
+              model: Permission,
+              as: "permissions", // 👈 alias correcto
+              through: { attributes: [] },
+            },
+          ],
+        },
+      ],
+      transaction,
+    });
 
-    const targetIsSuperAdmin = targetUser.Role.Permissions?.some(p => p.name === 'super_admin');
-    if (targetIsSuperAdmin) return res.status(403).json({ error: 'No puedes modificar roles de otros superadministradores' });
+    if (!targetUser) {
+      await transaction.rollback();
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
 
-    const newRole = await Role.findOne({ where: { name: roleName }, include: [Permission], transaction });
-    if (!newRole) return res.status(404).json({ error: 'Rol no encontrado' });
+    // 2️⃣ Verificar si el usuario objetivo es superadmin
+    const targetIsSuperAdmin = targetUser.role?.permissions?.some(
+      (p) => p.name === "super_admin"
+    );
+    if (targetIsSuperAdmin) {
+      await transaction.rollback();
+      return res
+        .status(403)
+        .json({ error: "No puedes modificar roles de otros superadministradores" });
+    }
 
-    const newRoleIsSuperAdmin = newRole.Permissions.some(p => p.name === 'super_admin');
-    if (newRoleIsSuperAdmin) return res.status(403).json({ error: 'Solo superadministradores pueden asignar este rol' });
+    // 3️⃣ Buscar el nuevo rol con sus permisos
+    const newRole = await Role.findOne({
+      where: { name: roleName },
+      include: [
+        {
+          model: Permission,
+          as: "permissions",
+          through: { attributes: [] },
+        },
+      ],
+      transaction,
+    });
 
+    if (!newRole) {
+      await transaction.rollback();
+      return res.status(404).json({ error: "Rol no encontrado" });
+    }
+
+    // 4️⃣ Verificar si el nuevo rol es superadmin
+    const newRoleIsSuperAdmin = newRole.permissions?.some(
+      (p) => p.name === "super_admin"
+    );
+    if (newRoleIsSuperAdmin) {
+      await transaction.rollback();
+      return res
+        .status(403)
+        .json({ error: "Solo superadministradores pueden asignar este rol" });
+    }
+
+    // 5️⃣ Actualizar rol del usuario
     await targetUser.update({ roleId: newRole.id }, { transaction });
     await transaction.commit();
 
-    res.json({ message: 'Rol asignado correctamente', user: { id: targetUser.id, newRole: newRole.name } });
+    res.json({
+      message: "Rol asignado correctamente",
+      user: {
+        id: targetUser.id,
+        newRole: newRole.name,
+      },
+    });
   } catch (error) {
     await transaction.rollback();
-    console.error('Error asignando rol:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error("Error asignando rol:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
   }
 };
+
 
 exports.removeRoleFromUser = async (req, res) => {
   const transaction = await sequelize.transaction();
@@ -249,10 +310,23 @@ exports.removeRoleFromUser = async (req, res) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId requerido' });
 
-    const targetUser = await User.findByPk(userId, { include: [Role], transaction });
+    // ✅ Incluir rol con alias y sus permisos
+    const targetUser = await User.findByPk(userId, {
+      include: {
+        model: Role,
+        as: 'role',                // 🔹 alias correcto
+        include: {
+          model: Permission,
+          as: 'permissions',       // 🔹 alias de Role ↔ Permission
+          through: { attributes: [] }
+        }
+      },
+      transaction
+    });
+
     if (!targetUser) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    const targetIsSuperAdmin = targetUser.Role.Permissions?.some(p => p.name === 'super_admin');
+    const targetIsSuperAdmin = targetUser.role.permissions?.some(p => p.name === 'super_admin');
     if (targetIsSuperAdmin) return res.status(403).json({ error: 'No puedes modificar roles de otros superadministradores' });
 
     const defaultRole = await Role.findOne({ where: { name: 'user' }, transaction });
@@ -269,6 +343,7 @@ exports.removeRoleFromUser = async (req, res) => {
   }
 };
 
+
 // ---------------------------------------------------
 // Obtener usuarios y roles
 exports.getUsersWithRoles = async (req, res) => {
@@ -276,8 +351,16 @@ exports.getUsersWithRoles = async (req, res) => {
     const users = await User.findAll({
       attributes: ['id', 'nombre', 'apellido', 'status'],
       include: [
-        { model: Credential, attributes: ['email'] },
-        { model: Role, attributes: ['name', 'description'] }
+        {
+          model: Credential,
+          as: 'credential',              // 👈 alias correcto
+          attributes: ['email']
+        },
+        {
+          model: Role,
+          as: 'role',                    // 👈 alias correcto
+          attributes: ['name', 'description']
+        }
       ],
       order: [['id', 'ASC']]
     });
@@ -287,8 +370,8 @@ exports.getUsersWithRoles = async (req, res) => {
         id: u.id,
         nombre: u.nombre,
         apellido: u.apellido,
-        email: u.Credential?.email,
-        role: u.Role?.name || 'sin rol',
+        email: u.credential?.email,       // 👈 minúscula
+        role: u.role?.name || 'sin rol',  // 👈 minúscula
         status: u.status
       }))
     });

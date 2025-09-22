@@ -1,7 +1,7 @@
 const { DataTypes, Model } = require("sequelize");
 const { sequelize } = require("../utils/db");
 
-class Role extends Model {}
+class Role extends Model { }
 
 Role.init(
   {
@@ -26,5 +26,10 @@ Role.init(
     tableName: "roles",
   }
 );
+
+  // 🔹 Asociaciones
+Role.associate = (models) => {
+    Role.hasMany(models.User, { foreignKey: "roleId" });
+  };
 
 module.exports = Role;
