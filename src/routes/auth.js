@@ -13,9 +13,18 @@ router.post('/login', authController.login);
 // REGISTER (solo superadmin)
 router.post(
     '/register',
-    auth,                  // 🔑 primero valida token y setea req.user
+    auth,          
+    checkPermission('create_user'),        // 🔑 primero valida token y setea req.user
     authController.isSuperAdmin, 
     authController.register
+);
+
+// Eliminar usuario
+router.delete(
+    '/users/:userId', 
+    auth,
+    checkPermission('delete_user'), 
+    authController.deleteUser
 );
 
 // ---------------------------------------------------

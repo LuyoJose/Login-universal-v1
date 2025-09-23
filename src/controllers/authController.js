@@ -175,10 +175,23 @@ exports.register = async (req, res) => {
       return res.status(409).json({ error: 'El email ya está registrado' });
     }
 
-    // Validar rol
+    // Validar rol solicitado
     const roleObj = await Role.findOne({ where: { name: role } });
     if (!roleObj) {
       return res.status(400).json({ error: 'Rol inválido' });
+    }
+
+    // 🔐 REGLAS DE NEGOCIO POR ROL
+    if (req.user.role === 'manager' && role !== 'user') {
+      return res.status(403).json({ error: 'Managers solo pueden crear usuarios con rol user' });
+    }
+
+    if (req.user.role === 'admin' && role === 'admin') {
+      return res.status(403).json({ error: 'Admins no pueden crear otros admins' });
+    }
+
+    if (req.user.role !== 'superadmin' && role === 'superadmin') {
+      return res.status(403).json({ error: 'Solo un SuperAdmin puede crear SuperAdmins' });
     }
 
     // Crear usuario
@@ -191,10 +204,10 @@ exports.register = async (req, res) => {
       status: 'active'
     });
 
-    // Crear credencial (password en texto plano, Sequelize lo hashea con el hook)
+    // Crear credencial
     await Credential.create({
       email,
-      password, // sin hash aquí
+      password, // Sequelize lo hashea en el hook
       userId: newUser.id,
       isVerified: true,
     });
@@ -213,6 +226,37 @@ exports.register = async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor', details: error.message });
   }
 };
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUser = req.user;
+
+    // Validar permiso
+    if (!currentUser.permissions.includes("delete_user")) {
+      return res.status(403).json({ error: "No tienes permiso para eliminar usuarios" });
+    }
+
+    const userToDelete = await User.findByPk(userId, { include: Role });
+    if (!userToDelete) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    const targetRole = userToDelete.Role.name;
+    const currentRole = currentUser.role;
+
+    // Reglas
+    if (currentRole === "admin" && (targetRole === "admin" || targetRole === "superadmin")) {
+      return res.status(403).json({ error: "Un admin no puede eliminar a otros admins ni superadmins" });
+    }
+
+    // Superadmin puede eliminar a cualquiera ✅
+
+    await userToDelete.destroy();
+    res.json({ message: `Usuario ${userId} eliminado correctamente` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 
 // ---------------------------------------------------
 // Gestión de roles
