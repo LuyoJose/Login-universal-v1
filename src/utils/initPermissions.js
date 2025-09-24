@@ -127,7 +127,7 @@ const initPermissions = async () => {
         // Manager: solo read, write y create_user
         await Promise.all(
             permissionRecords
-                .filter((p) => ["read", "write", "create_user"].includes(p.name))
+                .filter((p) => ["read", "write", "create_user",  "delete_user"].includes(p.name))
                 .map(async (perm) => {
                     await RolePermission.findOrCreate({
                         where: {

@@ -14,8 +14,7 @@ router.post('/login', authController.login);
 router.post(
     '/register',
     auth,          
-    checkPermission('create_user'),        // 🔑 primero valida token y setea req.user
-    authController.isSuperAdmin, 
+    checkPermission('create_user'),        // 🔑 primero valida token y setea req.user, 
     authController.register
 );
 

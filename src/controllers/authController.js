@@ -8,6 +8,7 @@ const { sequelize } = require('../utils/db');
 const config = require('../config');
 const transporter = require('../utils/mailer');
 const sendEmail = require('../utils/sendEmail');
+const { sendWelcomeEmail } = require("../utils/emailService");
 
 // ---------------------------------------------------
 // Función para asignar permisos por defecto
@@ -182,15 +183,17 @@ exports.register = async (req, res) => {
     }
 
     // 🔐 REGLAS DE NEGOCIO POR ROL
-    if (req.user.role === 'manager' && role !== 'user') {
+    const requesterRole = req.user.role;
+
+    if (requesterRole === 'manager' && role !== 'user') {
       return res.status(403).json({ error: 'Managers solo pueden crear usuarios con rol user' });
     }
 
-    if (req.user.role === 'admin' && role === 'admin') {
+    if (requesterRole === 'admin' && role === 'admin') {
       return res.status(403).json({ error: 'Admins no pueden crear otros admins' });
     }
 
-    if (req.user.role !== 'superadmin' && role === 'superadmin') {
+    if (requesterRole !== 'superadmin' && role === 'superadmin') {
       return res.status(403).json({ error: 'Solo un SuperAdmin puede crear SuperAdmins' });
     }
 
@@ -212,6 +215,14 @@ exports.register = async (req, res) => {
       isVerified: true,
     });
 
+    // 📧 Enviar correo al usuario creado
+    try {
+      await sendWelcomeEmail(email, password, roleObj.name);
+    } catch (mailError) {
+      console.error("❌ Error enviando correo:", mailError.message);
+      // No detiene el registro, solo loggea
+    }
+
     res.status(201).json({
       message: 'Usuario registrado exitosamente',
       user: {
@@ -227,35 +238,52 @@ exports.register = async (req, res) => {
   }
 };
 
+
 exports.deleteUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const currentUser = req.user;
 
-    // Validar permiso
+    // Validar permiso general
     if (!currentUser.permissions.includes("delete_user")) {
       return res.status(403).json({ error: "No tienes permiso para eliminar usuarios" });
     }
 
-    const userToDelete = await User.findByPk(userId, { include: Role });
+    const userToDelete = await User.findByPk(userId, { include: { model: Role, as: "role" } });
     if (!userToDelete) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    const targetRole = userToDelete.Role.name;
+    const targetRole = userToDelete.role?.name;
     const currentRole = currentUser.role;
 
-    // Reglas
-    if (currentRole === "admin" && (targetRole === "admin" || targetRole === "superadmin")) {
-      return res.status(403).json({ error: "Un admin no puede eliminar a otros admins ni superadmins" });
+    // 🚫 No permitir borrar a uno mismo
+    if (currentUser.id === userToDelete.id) {
+      return res.status(403).json({ error: "No puedes eliminarte a ti mismo" });
     }
 
-    // Superadmin puede eliminar a cualquiera ✅
+    // 🔹 Reglas según rol
+    if (currentRole === "superadmin") {
+      // ✅ Puede borrar a cualquiera excepto a sí mismo (ya validado arriba)
+    } else if (currentRole === "admin") {
+      if (targetRole === "admin" || targetRole === "superadmin") {
+        return res.status(403).json({ error: "Un admin no puede eliminar a otros admins ni superadmins" });
+      }
+    } else if (currentRole === "manager") {
+      if (targetRole !== "user") {
+        return res.status(403).json({ error: "Un manager solo puede eliminar usuarios con rol user" });
+      }
+    } else {
+      // user y otros roles sin permiso
+      return res.status(403).json({ error: "No tienes permiso para eliminar usuarios" });
+    }
 
     await userToDelete.destroy();
     res.json({ message: `Usuario ${userId} eliminado correctamente` });
   } catch (err) {
+    console.error("Error en deleteUser:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
 
 // ---------------------------------------------------
