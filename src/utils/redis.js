@@ -1,19 +1,25 @@
 const { createClient } = require('redis');
 const config = require('../config');
+const logger = require('./logger'); // 👈 importa logger
 
 const client = createClient({
   url: config.redisUrl,
 });
 
-client.on('error', (err) => console.error('Redis error:', err));
+client.on('error', (err) => logger.error('❌ Redis error:', err));
 
-// Conecta al conectar el server
+// Conecta al iniciar el server
 let isConnected = false;
 async function connectRedis() {
   if (!isConnected) {
-    await client.connect();
-    isConnected = true;
-    console.log('Redis conectado');
+    try {
+      await client.connect();
+      isConnected = true;
+      logger.info('✅ Redis conectado');
+    } catch (err) {
+      logger.error('❌ Error conectando a Redis:', err);
+      throw err;
+    }
   }
   return client;
 }

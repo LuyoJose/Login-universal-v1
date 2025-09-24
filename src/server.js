@@ -4,8 +4,8 @@ const helmet = require('helmet');
 const { connectRedis } = require('./utils/redis');
 const { connectDB } = require('./utils/db');
 const authRoutes = require('./routes/auth');
-const protectedRoutes = require('./routes/protectedRoutes');
 const { initPermissions } = require('./utils/initPermissions');
+const logger = require('./utils/logger'); // 👈 importar tu logger
 
 const app = express();
 
@@ -16,11 +16,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rutas
 app.use('/api/auth', authRoutes);
-app.use('/api/protected', protectedRoutes);
 
 // Middleware de errores
 app.use((err, req, res, next) => {
-  console.error('Error detallado:', err);
+  logger.error('Error detallado:', err); // 👈 usar logger
   res.status(500).json({
     error: 'Error interno del servidor',
     message: err.message,
@@ -31,18 +30,18 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     await connectDB();
-    console.log("✅ Conectado a PostgreSQL y tablas sincronizadas");
+    logger.info("✅ Conectado a PostgreSQL y tablas sincronizadas");
 
     await initPermissions();
-    console.log("✅ Permisos y roles inicializados");
+    logger.info("✅ Permisos y roles inicializados");
 
     await connectRedis();
-    console.log("✅ Conectado a Redis");
+    logger.info("✅ Conectado a Redis");
 
     const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`));
+    app.listen(PORT, () => logger.info(`🚀 Servidor corriendo en http://localhost:${PORT}`));
   } catch (error) {
-    console.error("❌ Error al iniciar servidor:", error);
+    logger.error("❌ Error al iniciar servidor:", error);
     process.exit(1);
   }
 };

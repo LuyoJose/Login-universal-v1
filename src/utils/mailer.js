@@ -1,17 +1,14 @@
 // src/utils/mailer.js
 const nodemailer = require('nodemailer');
 
-let transporter;
-
-try {
-    transporter = nodemailer.createTransport({
-        host: 'localhost', // MailHog
-        port: 1025,
-        secure: false, // MailHog no usa TLS
-    });
-} catch (err) {
-    console.warn('No se pudo conectar con MailHog, se usará fallback a consola.');
-    transporter = null;
-}
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'localhost',
+    port: process.env.SMTP_PORT || 1025, // MailHog por defecto
+    secure: false,
+    auth: {
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || ''
+    }
+});
 
 module.exports = transporter;

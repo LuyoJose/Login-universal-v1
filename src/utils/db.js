@@ -1,6 +1,6 @@
-// src/utils/db.js
 const { Sequelize } = require('sequelize');
 const config = require('../config');
+const logger = require('./logger'); // 👈 importa tu logger
 
 // Crea instancia Sequelize
 const sequelize = new Sequelize(
@@ -11,8 +11,8 @@ const sequelize = new Sequelize(
     host: config.dbHost || process.env.DB_HOST,
     port: config.dbPort || process.env.DB_PORT || 5432,
     dialect: 'postgres',
-    logging: config.nodeEnv === 'development' ? console.log : false,  // Logs queries en dev
-    pool: {  // Pool de conexiones para performance
+    logging: config.nodeEnv === 'development' ? (msg) => logger.debug(msg) : false,  // 👈 usa logger en dev
+    pool: {
       max: 5,
       min: 0,
       acquire: 30000,
@@ -25,15 +25,15 @@ const sequelize = new Sequelize(
 async function connectDB() {
   try {
     await sequelize.authenticate();
-    console.log('✅ PostgreSQL conectado');
-    
+    logger.info('✅ PostgreSQL conectado');
+
     // ⚠️ SOLO EN DESARROLLO: { alter: true } para actualizar esquemas
     const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
     await sequelize.sync(syncOptions);
-    
-    console.log('✅ Tablas sincronizadas');
+
+    logger.info('✅ Tablas sincronizadas');
   } catch (error) {
-    console.error('❌ Error conectando DB:', error);
+    logger.error('❌ Error conectando DB:', error);
     process.exit(1);
   }
 }
