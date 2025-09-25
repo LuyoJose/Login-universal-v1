@@ -11,7 +11,7 @@ const sequelize = new Sequelize(
     host: config.dbHost || process.env.DB_HOST,
     port: config.dbPort || process.env.DB_PORT || 5432,
     dialect: 'postgres',
-    logging: config.nodeEnv === 'development' ? (msg) => logger.debug(msg) : false,  // 👈 usa logger en dev
+    logging: process.env.DEBUG === 'true' ? console.log : false,// 👈 usa logger en dev
     pool: {
       max: 5,
       min: 0,

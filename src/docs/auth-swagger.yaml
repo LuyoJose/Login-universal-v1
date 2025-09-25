@@ -1,0 +1,586 @@
+# src/docs/auth-swagger.yaml
+openapi: 3.0.3
+info:
+  title: API de Autenticación
+  description: Endpoints para gestión de autenticación, usuarios y roles
+  version: 1.0.0
+
+tags:
+  - name: Auth
+    description: Endpoints de autenticación y registro
+  - name: Usuarios
+    description: Gestión de usuarios y roles
+  - name: Password
+    description: Recuperación y reset de contraseñas
+
+paths:
+  /auth/login:
+    post:
+      summary: Inicia sesión y obtiene un token JWT
+      description: |
+        Autentica a un usuario con email y password.
+        Si las credenciales son correctas, genera un token JWT, guarda la sesión en Redis y devuelve los datos al cliente.
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  example: secret123
+      responses:
+        '200':
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Login OK"
+                  sessionId:
+                    type: string
+                    example: "session_abc123def456"
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        example: "123e4567-e89b-12d3-a456-426614174000"
+                      email:
+                        type: string
+                        example: user@example.com
+                      role:
+                        type: string
+                        example: admin
+                      nombre:
+                        type: string
+                        example: Juan
+                      apellido:
+                        type: string
+                        example: Pérez
+        '400':
+          description: Datos incompletos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Email y password requeridos"
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Credenciales inválidas"
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error interno"
+                  details:
+                    type: string
+                    example: "Error message"
+
+  /auth/register:
+    post:
+      summary: Registrar un nuevo usuario
+      description: |
+        Crea un nuevo usuario en el sistema.  
+        Solo usuarios autenticados con permiso `create_user` pueden acceder.
+        Reglas de negocio:
+        - Manager solo puede crear usuarios con rol **user**
+        - Admin no puede crear otros **admin**
+        - Solo **superadmin** puede crear otros **superadmin**
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nombre
+                - apellido
+                - email
+                - password
+                - role
+              properties:
+                nombre:
+                  type: string
+                  example: Juan
+                apellido:
+                  type: string
+                  example: Pérez
+                email:
+                  type: string
+                  format: email
+                  example: nuevo@ejemplo.com
+                password:
+                  type: string
+                  example: secret123
+                role:
+                  type: string
+                  enum: [superadmin, admin, manager, user]
+                  example: user
+      responses:
+        '201':
+          description: Usuario registrado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Usuario registrado exitosamente"
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        example: "123e4567-e89b-12d3-a456-426614174000"
+                      nombre:
+                        type: string
+                        example: Juan
+                      apellido:
+                        type: string
+                        example: Pérez
+                      role:
+                        type: string
+                        example: user
+        '400':
+          description: Datos incompletos o rol inválido
+          content:
+            application/json:
+              examples:
+                datosIncompletos:
+                  value:
+                    error: "Todos los campos son obligatorios"
+                rolInvalido:
+                  value:
+                    error: "Rol inválido"
+        '403':
+          description: Restricción por reglas de negocio
+          content:
+            application/json:
+              examples:
+                managerSoloUser:
+                  value:
+                    error: "Managers solo pueden crear usuarios con rol user"
+                adminOtroAdmin:
+                  value:
+                    error: "Admins no pueden crear otros admins"
+                crearSuperadmin:
+                  value:
+                    error: "Solo un SuperAdmin puede crear SuperAdmins"
+        '409':
+          description: Email ya registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "El email ya está registrado"
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error interno del servidor"
+                  details:
+                    type: string
+                    example: "Error message"
+
+  /auth/users:
+    get:
+      summary: Obtener todos los usuarios con sus roles
+      description: |
+        Devuelve lista de usuarios con sus datos básicos y roles.
+        Requiere permiso de lectura.
+      tags:
+        - Usuarios
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de usuarios obtenida correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          example: "123e4567-e89b-12d3-a456-426614174000"
+                        nombre:
+                          type: string
+                          example: Juan
+                        apellido:
+                          type: string
+                          example: Pérez
+                        email:
+                          type: string
+                          example: juan@example.com
+                        role:
+                          type: string
+                          example: admin
+                        status:
+                          type: string
+                          enum: [active, inactive]
+                          example: active
+        '403':
+          description: Sin permisos de lectura
+        '500':
+          description: Error interno del servidor
+
+  /auth/users/{userId}:
+    delete:
+      summary: Eliminar un usuario
+      description: |
+        Elimina un usuario según reglas de negocio y permisos:
+        - **SuperAdmin** → puede eliminar cualquier usuario (excepto a sí mismo)
+        - **Admin** → puede eliminar `manager` o `user`, pero no otros `admin` ni `superadmin`
+        - **Manager** → solo puede eliminar usuarios con rol `user`
+        - **User** → no puede eliminar a nadie
+        - 🚫 Ningún usuario puede eliminarse a sí mismo
+      tags:
+        - Usuarios
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario a eliminar
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Usuario eliminado correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Usuario eliminado correctamente"
+        '403':
+          description: Sin permisos o restricción de negocio
+          content:
+            application/json:
+              examples:
+                sinPermisos:
+                  value:
+                    error: "No tienes permiso para eliminar usuarios"
+                autoEliminacion:
+                  value:
+                    error: "No puedes eliminarte a ti mismo"
+                adminEliminarAdmin:
+                  value:
+                    error: "Un admin no puede eliminar a otros admins ni superadmins"
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Usuario no encontrado"
+        '500':
+          description: Error interno del servidor
+
+  /auth/roles:
+    get:
+      summary: Obtener roles disponibles
+      description: Devuelve lista de roles configurados en el sistema
+      tags:
+        - Usuarios
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de roles obtenida correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roles:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: admin
+                        description:
+                          type: string
+                          example: "Administrador del sistema"
+        '500':
+          description: Error interno del servidor
+
+  /auth/assign-role:
+    post:
+      summary: Asignar rol a usuario (Solo SuperAdmin)
+      description: |
+        Asigna un nuevo rol a un usuario existente.
+        Solo disponible para superadministradores.
+        No se puede asignar rol de superadmin mediante este endpoint.
+      tags:
+        - Usuarios
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+                - roleName
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+                roleName:
+                  type: string
+                  enum: [admin, manager, user]
+                  example: manager
+      responses:
+        '200':
+          description: Rol asignado correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Rol asignado correctamente"
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      newRole:
+                        type: string
+        '400':
+          description: Datos incompletos
+        '403':
+          description: No es superadmin o intento de modificar superadmin
+        '404':
+          description: Usuario o rol no encontrado
+        '500':
+          description: Error interno del servidor
+
+  /auth/remove-role:
+    post:
+      summary: Remover rol de usuario (Solo SuperAdmin)
+      description: |
+        Remueve el rol actual de un usuario y le asigna el rol por defecto "user".
+        Solo disponible para superadministradores.
+        No se puede modificar roles de otros superadministradores.
+      tags:
+        - Usuarios
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Rol removido correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Rol removido, asignado rol por defecto"
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      newRole:
+                        type: string
+                        example: user
+        '400':
+          description: userId requerido
+        '403':
+          description: No es superadmin o intento de modificar superadmin
+        '404':
+          description: Usuario no encontrado o rol por defecto no configurado
+        '500':
+          description: Error interno del servidor
+
+  /auth/forgot-password-otp:
+    post:
+      summary: Solicitar OTP para recuperación de contraseña
+      description: |
+        Envía un OTP de 6 dígitos al email del usuario para recuperar contraseña.
+        El OTP expira en 5 minutos.
+        Por seguridad, siempre devuelve éxito aunque el email no exista.
+      tags:
+        - Password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: usuario@example.com
+      responses:
+        '200':
+          description: OTP enviado correctamente (si el email existe)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Si el email existe, se ha enviado un OTP"
+        '400':
+          description: Email no proporcionado
+        '500':
+          description: Error interno del servidor
+
+  /auth/reset-password-otp:
+    post:
+      summary: Resetear contraseña usando OTP
+      description: |
+        Restablece la contraseña usando el OTP recibido por email.
+        La contraseña debe tener mínimo 8 caracteres, al menos una letra y un número.
+      tags:
+        - Password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - otp
+                - newPassword
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: usuario@example.com
+                otp:
+                  type: string
+                  example: "123456"
+                newPassword:
+                  type: string
+                  example: "nuevaPassword123"
+      responses:
+        '200':
+          description: Contraseña actualizada correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Contraseña actualizada correctamente"
+        '400':
+          description: Datos incompletos, OTP inválido o contraseña no cumple requisitos
+        '404':
+          description: Usuario no encontrado
+        '500':
+          description: Error interno del servidor
+
+  /auth/create-test-user:
+    post:
+      summary: Crear usuario de prueba (Desarrollo)
+      description: |
+        Crea un usuario de prueba para desarrollo.
+        Solo disponible en entornos de desarrollo.
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Usuario de prueba creado o ya existente
+        '500':
+          description: Error interno del servidor
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

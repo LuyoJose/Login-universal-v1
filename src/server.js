@@ -6,6 +6,7 @@ const { connectDB } = require('./utils/db');
 const authRoutes = require('./routes/auth');
 const { initPermissions } = require('./utils/initPermissions');
 const logger = require('./utils/logger'); // 👈 importar tu logger
+const swaggerDocs = require('./utils/swagger');
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 app.use('/api/auth', authRoutes);
 
+swaggerDocs(app);
 // Middleware de errores
 app.use((err, req, res, next) => {
   logger.error('Error detallado:', err); // 👈 usar logger
