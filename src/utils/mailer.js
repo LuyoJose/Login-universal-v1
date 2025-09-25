@@ -5,10 +5,7 @@ const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'localhost',
     port: process.env.SMTP_PORT || 1025, // MailHog por defecto
     secure: false,
-    auth: {
-        user: process.env.SMTP_USER || '',
-        pass: process.env.SMTP_PASS || ''
-    }
+    auth: null,
 });
 
 module.exports = transporter;

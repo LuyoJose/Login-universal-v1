@@ -11,6 +11,8 @@ const sendEmail = require('../utils/sendEmail');
 const { sendWelcomeEmail } = require("../utils/emailService");
 const logger = require("../utils/logger");
 
+require('dotenv').config();
+const USE_OTP = process.env.USE_OTP === 'true';
 // ---------------------------------------------------
 // Función para asignar permisos por defecto
 async function assignDefaultPermissions(userId, roleName) {
@@ -593,10 +595,15 @@ exports.createTestUser = async () => {
 // ---------------------------------------------------
 // Solicitar recuperación de contraseña → Enviar OTP
 exports.sendOtp = async (req, res) => {
+  if (!USE_OTP) {
+    logger.info('⚠️ Funcionalidad de OTP desactivada');
+    return res.status(403).json({ error: 'Funcionalidad de OTP desactivada' });
+  }
+
   const { email } = req.body;
   if (!email) {
-    logger.warn("⚠️ Email no proporcionado en sendOtp");
-    return res.status(400).json({ error: "Email requerido" });
+    logger.warn('⚠️ Email no proporcionado en sendOtp');
+    return res.status(400).json({ error: 'Email requerido' });
   }
 
   try {
@@ -606,7 +613,7 @@ exports.sendOtp = async (req, res) => {
       logger.warn(`⚠️ Intento de recuperación para email inexistente: ${email}`);
       return res
         .status(200)
-        .json({ message: "Si el email existe, se ha enviado un OTP" });
+        .json({ message: 'Si el email existe, se ha enviado un OTP' });
     }
 
     // Generar OTP de 6 dígitos
@@ -619,62 +626,69 @@ exports.sendOtp = async (req, res) => {
     // Enviar OTP por email
     await sendEmail({
       to: email,
-      subject: "Recuperación de contraseña - OTP",
+      subject: 'Recuperación de contraseña - OTP',
       html: `<p>Tu código OTP es: <b>${otp}</b>. Expira en 5 minutos.</p>`,
     });
 
     logger.info(`📧 OTP enviado correctamente al email: ${email}`);
-    res.json({ message: "OTP enviado correctamente" });
+    res.json({ message: 'OTP enviado correctamente' });
   } catch (error) {
-    logger.error("❌ Error enviando OTP:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    logger.error('❌ Error enviando OTP:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
 
-// Resetear contraseña usando OTP
+// Restablecer contraseña con o sin OTP según USE_OTP
 exports.resetPasswordWithOtp = async (req, res) => {
   const { email, otp, newPassword } = req.body;
-  if (!email || !otp || !newPassword) {
-    logger.warn("Intento de reset sin parámetros completos", { email });
-    return res.status(400).json({ error: 'Email, OTP y nueva contraseña requeridos' });
+  if (!email || !newPassword) {
+    logger.warn('Intento de reset sin parámetros completos', { email });
+    return res.status(400).json({ error: 'Email y nueva contraseña requeridos' });
   }
 
   // Validación simple de contraseña
   const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
   if (!passwordRegex.test(newPassword)) {
-    logger.warn("Contraseña inválida en resetPasswordWithOtp", { email });
+    logger.warn('Contraseña inválida en resetPasswordWithOtp', { email });
     return res.status(400).json({
-      error: 'La contraseña debe tener mínimo 8 caracteres, al menos una letra y un número'
+      error: 'La contraseña debe tener mínimo 8 caracteres, al menos una letra y un número',
     });
   }
 
   try {
     const credential = await Credential.findOne({ where: { email } });
     if (!credential) {
-      logger.warn("Usuario no encontrado en resetPasswordWithOtp", { email });
+      logger.warn('Usuario no encontrado en resetPasswordWithOtp', { email });
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    const redis = await connectRedis();
-    const storedOtp = await redis.get(`otp:${credential.userId}`);
+    // Si OTP está activado, validar el OTP
+    if (USE_OTP) {
+      if (!otp) {
+        logger.warn('Intento de reset sin OTP cuando USE_OTP está activado', { email });
+        return res.status(400).json({ error: 'OTP requerido' });
+      }
 
-    if (!storedOtp || storedOtp !== otp) {
-      logger.warn("OTP inválido o expirado", { email, otpEnviado: otp });
-      return res.status(400).json({ error: 'OTP inválido o expirado' });
+      const redis = await connectRedis();
+      const storedOtp = await redis.get(`otp:${credential.userId}`);
+
+      if (!storedOtp || storedOtp !== otp) {
+        logger.warn('OTP inválido o expirado', { email, otpEnviado: otp });
+        return res.status(400).json({ error: 'OTP inválido o expirado' });
+      }
+
+      // Borrar OTP usado
+      await redis.del(`otp:${credential.userId}`);
     }
 
     // Hashear y actualizar contraseña
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await credential.update({ password: hashedPassword });
 
-    // Borrar OTP usado
-    await redis.del(`otp:${credential.userId}`);
-
-    logger.info("✅ Contraseña actualizada correctamente", { userId: credential.userId, email });
+    logger.info('✅ Contraseña actualizada correctamente', { userId: credential.userId, email });
     res.json({ message: 'Contraseña actualizada correctamente' });
-
   } catch (error) {
-    logger.error("❌ Error en resetPasswordWithOtp", { error: error.message, email });
+    logger.error('❌ Error en resetPasswordWithOtp', { error: error.message, email });
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
