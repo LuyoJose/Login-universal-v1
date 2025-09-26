@@ -618,24 +618,166 @@ exports.sendOtp = async (req, res) => {
 
     // Generar OTP de 6 dígitos
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpCreationTime = Date.now(); // Guardar timestamp
 
-    // Guardar OTP en Redis (expira en 5 minutos)
+    // Guardar OTP y timestamp en Redis (expira en 5 minutos)
     const redis = await connectRedis();
-    await redis.set(`otp:${credential.userId}`, otp, { EX: 300 });
+    await redis.set(`otp:${credential.userId}`, JSON.stringify({
+      code: otp,
+      createdAt: otpCreationTime
+    }), { EX: 300 });
 
-    // Enviar OTP por email
-    await sendEmail({
-      to: email,
-      subject: 'Recuperación de contraseña - OTP',
-      html: `<p>Tu código OTP es: <b>${otp}</b>. Expira en 5 minutos.</p>`,
+    // Enviar OTP por email (mismo HTML que ya tienes)
+    const expirationTime = new Date(otpCreationTime + 5 * 60 * 1000);
+    const formattedTime = expirationTime.toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Lima',
     });
 
-    logger.info(`📧 OTP enviado correctamente al email: ${email}`);
-    res.json({ message: 'OTP enviado correctamente' });
-  } catch (error) {
-    logger.error('❌ Error enviando OTP:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
+    // dentro de tu controlador
+await sendEmail({
+  to: email,
+  subject: 'Recuperación de Contraseña - Código OTP',
+  html: `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recuperación de Contraseña</title>
+    <style>
+        body { 
+            font-family: 'Arial', sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background-color: #f5f5f5; 
+        }
+        .email-container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: white; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        }
+        .email-header { 
+            background: linear-gradient(135deg, #dc2626, #b91c1c); 
+            padding: 30px; 
+            text-align: center; 
+            color: white; 
+        }
+        .email-header h1 { 
+            margin: 0; 
+            font-size: 24px; 
+            font-weight: 600; 
+        }
+        .email-body { 
+            padding: 30px; 
+            color: #333; 
+            line-height: 1.6; 
+        }
+        .otp-container { 
+            background: #f8fafc; 
+            border: 2px dashed #e2e8f0; 
+            border-radius: 8px; 
+            padding: 25px; 
+            margin: 25px 0; 
+            text-align: center; 
+        }
+        .otp-code { 
+            font-size: 32px; 
+            font-weight: bold; 
+            color: #dc2626; 
+            letter-spacing: 8px; 
+            background: white; 
+            padding: 15px 25px; 
+            border-radius: 8px; 
+            display: inline-block; 
+            margin: 10px 0; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .expiration-info { 
+            background: #fffbeb; 
+            border: 1px solid #fcd34d; 
+            border-radius: 6px; 
+            padding: 15px; 
+            margin: 20px 0; 
+            font-size: 14px; 
+            color: #92400e; 
+            text-align: center;
+        }
+        .security-alert { 
+            background: #fef3c7; 
+            border: 1px solid #f59e0b; 
+            border-radius: 6px; 
+            padding: 15px; 
+            margin: 20px 0; 
+        }
+        .email-footer { 
+            background: #f1f5f9; 
+            padding: 20px; 
+            text-align: center; 
+            color: #64748b; 
+            font-size: 14px; 
+            border-top: 1px solid #e2e8f0; 
+        }
+        @media (max-width: 600px) { 
+            .otp-code { font-size: 24px; letter-spacing: 6px; } 
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="email-header">
+            <h1>Recuperación de Contraseña</h1>
+        </div>
+        
+        <div class="email-body">
+            <p>Estimado usuario,</p>
+            
+            <p>Hemos recibido una solicitud para recuperar la contraseña de su cuenta. Utilice el siguiente código OTP para verificar su identidad:</p>
+            
+            <div class="otp-container">
+                <h3 style="margin-top: 0; color: #1e293b;">Código de Verificación</h3>
+                <div class="otp-code">${otp}</div>
+                
+                <div class="expiration-info">
+                    ⏳ Este código es válido por <strong>5 minutos</strong>.<br>
+                    <em>Expira a las ${formattedTime}</em>
+                </div>
+            </div>
+            
+            <div class="security-alert">
+                ⚠️ <strong>Importante:</strong> Si no solicitó este código, ignore este mensaje. 
+                Por su seguridad, nunca comparta este código con terceros.
+            </div>
+            
+            <p style="text-align: center;">
+                <strong>Ingrese este código en la página de verificación antes de que expire.</strong>
+            </p>
+        </div>
+        
+        <div class="email-footer">
+            <p>Este es un mensaje automático, por favor no responda a este correo.</p>
+            <p>Si tiene alguna pregunta, contacte a nuestro equipo de soporte: soporte@tuapp.com</p>
+        </div>
+    </div>
+</body>
+</html>`
+});
+
+
+  logger.info(`📧 OTP enviado correctamente al email: ${email}`);
+
+  // Enviar también el timestamp al frontend
+  res.json({
+    message: 'OTP enviado correctamente',
+  });
+
+} catch (error) {
+  logger.error('❌ Error enviando OTP:', error);
+  res.status(500).json({ error: 'Error interno del servidor' });
+}
 };
 
 // Restablecer contraseña con o sin OTP según USE_OTP
