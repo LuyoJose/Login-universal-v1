@@ -108,6 +108,59 @@ paths:
                   details:
                     type: string
                     example: "Error message"
+  
+  /auth/logout:
+    post:
+      summary: Cierra la sesión del usuario
+      description: |
+        Invalida el token JWT del usuario y elimina su sesión en Redis.  
+        - Si el token ya expiró, el middleware lo rechazará automáticamente.  
+        - Si el usuario cierra sesión manualmente, este endpoint invalida el token en Redis.
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []   # 🔑 requiere el JWT en el header Authorization
+      responses:
+        '200':
+          description: Logout exitoso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Sesión cerrada correctamente"
+        '400':
+          description: Token no proporcionado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Token no proporcionado"
+        '401':
+          description: Token inválido o expirado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Auth failed"
+        '500':
+          description: Error interno en logout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error en logout"
 
   /auth/register:
     post:

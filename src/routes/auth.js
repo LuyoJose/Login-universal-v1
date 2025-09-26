@@ -8,7 +8,8 @@ const { checkPermission } = require('../middleware/checkPermission');
 // ---------------------------------------------------
 // LOGIN (público)
 router.post('/login', authController.login);
-
+// LOGOUT (público)
+router.post('/logout', authController.logout);
 // ---------------------------------------------------
 // REGISTER (solo superadmin)
 router.post(

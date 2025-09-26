@@ -834,3 +834,26 @@ exports.resetPasswordWithOtp = async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
+
+// Logout - invalidar token en Redis
+exports.logout = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(400).json({ error: 'Token no proporcionado' });
+    }
+
+    // Decodificar para obtener userId
+    const decoded = jwt.verify(token, config.jwtSecret);
+    const redis = await connectRedis();
+
+    // Eliminar el token guardado en Redis
+    await redis.del(`token:${decoded.userId}`);
+
+    logger.info('🚪 Logout exitoso', { userId: decoded.userId });
+    return res.status(200).json({ message: 'Sesión cerrada correctamente' });
+  } catch (error) {
+    logger.error('❌ Error en logout', { error: error.message });
+    return res.status(500).json({ error: 'Error en logout' });
+  }
+};

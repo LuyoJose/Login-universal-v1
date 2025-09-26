@@ -15,6 +15,33 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ===== SISTEMA DE PLUGINS =====
+function loadPlugins(app, plugins) {
+  plugins.forEach(plugin => {
+    if (typeof plugin === 'function') {
+      app.use(plugin);
+      console.log(`🔌 Plugin cargado: ${plugin.name || 'anónimo'}`);
+    }
+  });
+}
+
+// Importar plugins
+const otpSecurityPlugin = require('./plugins/otpSecurityPlugin');
+const rateLimiterPlugin = require('./plugins/rateLimiterPlugin');
+
+// Enchufar plugins
+loadPlugins(app, [
+  otpSecurityPlugin,
+  rateLimiterPlugin
+]);
+
+// Rutas de ejemplo
+app.get('/', (req, res) => {
+  res.json({ message: 'API funcionando con sistema de plugins 🚀' });
+});
+
+app.listen(3000, () => console.log('✅ Servidor en http://localhost:3000'));
+
 // Rutas
 app.use('/api/auth', authRoutes);
 
